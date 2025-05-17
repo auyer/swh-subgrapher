@@ -4423,6 +4423,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "swhids-subgrapher"
+version = "6.7.0"
+dependencies = [
+ "anyhow",
+ "bitvec",
+ "clap",
+ "dsi-progress-logger 0.2.4",
+ "env_logger 0.11.5",
+ "hex",
+ "log",
+ "sha1",
+ "swh-graph",
+]
+
+[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -8,6 +8,7 @@ members = [
     "rust",
     "tools/counters",
     "tools/topology",
+    "swhids-subgrapher",
 ]
 
 [workspace.package]

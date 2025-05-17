@@ -1,15 +1,20 @@
 [package]
-name = "swh-subgrapher"
-version = "0.1.0"
+name = "swhids-subgrapher"
+version.workspace = true
 edition = "2024"
+readme = "README.md"
+description = "script to help with Software Heritage Sub-graph generation. It retrieves a list of SWHIDs from input Origins"
+license = "GPL-3.0-or-later"
+keywords = ["software-heritage", "graph", "webgraph"]
+categories = ["compression", "science"]
 
 [dependencies]
-anyhow = "1.0.98"
+anyhow = "1.0.79"
 bitvec = "1.0.1"
-clap = "4.5.37"
-dsi-progress-logger = "0.8.1"
-env_logger = "0.11.8"
+clap = "4.1.6"
+dsi-progress-logger = "0.2.4"
+env_logger = "0.11.5"
 hex = "0.4.3"
-log = "0.4.27"
-sha1 = "0.10.6"
-swh-graph = "6.7.0"
+log = "0.4.17"
+sha1 = "0.10.1"
+swh-graph = { workspace = true, features = ["serde"] }
