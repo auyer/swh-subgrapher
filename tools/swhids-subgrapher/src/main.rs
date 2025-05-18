@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use bitvec::prelude::*;
 use clap::Parser;
 use dsi_progress_logger::{ProgressLog, progress_logger};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 use swh_graph::graph::SwhGraphWithProperties;
 use swh_graph::graph::{self, SwhForwardGraph, SwhGraph};
@@ -100,7 +100,7 @@ pub fn main() -> Result<()> {
             error!("origin {origin} not in graph");
             unknown_origins.push(origin);
             continue;
-        }
+        };
         info!("obtained node ID {node_id} ...");
 
         // Setup a queue and a visited bitmap for the visit
@@ -122,10 +122,8 @@ pub fn main() -> Result<()> {
 
         // Standard BFS
         while let Some(current_node) = queue.pop_front() {
-            if log::log_enabled(Level::Debug) {
-                let visited_swhid = graph.properties().swhid(current_node);
-                debug!("{visited_swhid}");
-            }
+            let visited_swhid = graph.properties().swhid(current_node);
+            debug!("visited: {visited_swhid}");
             // add current_node to the external results hashmap
             let new = subgraph_nodes.insert(visited_swhid.to_string());
             //  only visit children if this node is new

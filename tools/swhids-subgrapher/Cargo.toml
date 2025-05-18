@@ -10,6 +10,7 @@ categories = ["compression", "science"]
 
 [dependencies]
 anyhow = "1.0.79"
+bitvec = "1.0.1"
 clap = "4.1.6"
 dsi-progress-logger = "0.2.4"
 env_logger = "0.11.5"
