@@ -3,7 +3,7 @@
 // License: GNU General Public License version 3, or any later version
 // See top-level LICENSE file for more information
 
-use sha1::{Digest, Sha1};
+use swh_graph::SWHID;
 
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
@@ -55,18 +55,11 @@ pub fn main() -> Result<()> {
     let mut unknown_origins = vec![];
 
     for origin in origins.iter() {
-        let origin_hash = get_sha1(origin.to_owned());
-
-        // "swh:1:ori:{}"
-        let origin_swhid = swh_graph::SWHID {
-            namespace_version: 1,
-            node_type: swh_graph::NodeType::Origin,
-            hash: origin_hash,
-        };
+        let origin_swhid = SWHID::from_origin_url(origin.to_owned());
 
         // Lookup SWHID
         info!("looking up SWHID {} ...", origin);
-        let mut node_id = graph_props.node_id(origin_swhid).context("Unknown SWHID");
+        let mut node_id = graph_props.node_id(origin_swhid);
 
         if node_id.is_err() && args.try_protocol_variations {
             error!("origin {origin} not in graph. Will look for other protocols");
@@ -80,15 +73,9 @@ pub fn main() -> Result<()> {
                     origin.to_owned()
                 };
 
-                let origin_hash = get_sha1(new_origin.to_owned());
+                let origin_swhid = SWHID::from_origin_url(new_origin.to_owned());
 
-                let origin_swhid = swh_graph::SWHID {
-                    namespace_version: 1,
-                    node_type: swh_graph::NodeType::Origin,
-                    hash: origin_hash,
-                };
-
-                node_id = graph_props.node_id(origin_swhid).context("Unknown SWHID");
+                node_id = graph_props.node_id(origin_swhid);
                 if node_id.is_ok() {
                     debug!("origin found with different protocol {origin} -> {new_origin}");
                 }
@@ -188,19 +175,6 @@ where
     }
 
     Ok(())
-}
-
-fn get_sha1(origin: String) -> [u8; 20] {
-    // create a Sha1 object
-    let mut hasher = Sha1::new();
-
-    // process input message
-    hasher.update(origin);
-
-    // acquire hash digest in the form of GenericArray,
-    // which in this case is equivalent to [u8; 20]
-    let result = hasher.finalize();
-    result.into()
 }
 
 fn lines_from_file(filename: impl AsRef<Path>) -> Vec<String> {

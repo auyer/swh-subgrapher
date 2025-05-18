@@ -15,5 +15,4 @@ clap = "4.1.6"
 dsi-progress-logger = "0.2.4"
 env_logger = "0.11.5"
 log = "0.4.17"
-sha1 = "0.10.1"
-swh-graph = { workspace = true }
+swh-graph = { workspace = true , features = ["compression"]}

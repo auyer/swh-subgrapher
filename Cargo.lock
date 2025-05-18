@@ -4432,7 +4432,6 @@ dependencies = [
  "dsi-progress-logger 0.2.4",
  "env_logger 0.11.5",
  "log",
- "sha1",
  "swh-graph",
 ]
 
