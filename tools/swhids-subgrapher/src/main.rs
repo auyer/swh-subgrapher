@@ -125,7 +125,7 @@ pub fn main() -> Result<()> {
             let visited_swhid = graph.properties().swhid(current_node);
             debug!("visited: {visited_swhid}");
             // add current_node to the external results hashmap
-            let new = subgraph_nodes.insert(visited_swhid.to_string());
+            let new = subgraph_nodes.insert(visited_swhid);
             //  only visit children if this node is new
             if new {
                 visited_nodes += 1;
