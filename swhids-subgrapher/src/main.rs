@@ -1,21 +1,25 @@
+// Copyright (C) 2025  The Software Heritage developers
+// See the AUTHORS file at the top-level directory of this distribution
+// License: GNU General Public License version 3, or any later version
+// See top-level LICENSE file for more information
+
 use sha1::{Digest, Sha1};
 
-use swh_graph::graph::SwhGraphWithProperties;
-use swh_graph::graph::{self, SwhForwardGraph, SwhGraph};
-use swh_graph::mph::DynMphf;
+use std::collections::{HashSet, VecDeque};
+use std::fmt::Display;
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter, prelude::*};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use bitvec::prelude::*;
 use clap::Parser;
 use dsi_progress_logger::{ProgressLog, progress_logger};
 use log::{debug, error, info};
-use std::{
-    collections::{HashSet, VecDeque},
-    fmt::Display,
-    fs::File,
-    io::{self, BufReader, BufWriter, prelude::*},
-    path::{Path, PathBuf},
-};
+
+use swh_graph::graph::SwhGraphWithProperties;
+use swh_graph::graph::{self, SwhForwardGraph, SwhGraph};
+use swh_graph::mph::DynMphf;
 
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
@@ -92,12 +96,11 @@ pub fn main() -> Result<()> {
         }
 
         // if node_id is still err, attempts to switch protocols failed
-        if node_id.is_err() {
+        let Ok(node_id) = node_id else {
             error!("origin {origin} not in graph");
             unknown_origins.push(origin);
             continue;
         }
-        let node_id = node_id.unwrap();
         info!("obtained node ID {node_id} ...");
 
         // Setup a queue and a visited bitmap for the visit
@@ -119,8 +122,10 @@ pub fn main() -> Result<()> {
 
         // Standard BFS
         while let Some(current_node) = queue.pop_front() {
-            let visited_swhid = graph.properties().swhid(current_node);
-            debug!("{visited_swhid}");
+            if log::log_enabled(Level::Debug) {
+                let visited_swhid = graph.properties().swhid(current_node);
+                debug!("{visited_swhid}");
+            }
             // add current_node to the external results hashmap
             let new = subgraph_nodes.insert(visited_swhid.to_string());
             //  only visit children if this node is new
@@ -142,20 +147,20 @@ pub fn main() -> Result<()> {
 
     let output_filename = "output.txt";
 
-    println!("Attempting to write HashSet to '{}'...", output_filename);
+    debug!("Writing list of nodes to '{}'...", output_filename);
 
     // Call the function and handle the result
     match write_items_to_file(&subgraph_nodes, output_filename) {
-        Ok(_) => println!("Successfully wrote HashSet to '{}'.", output_filename),
-        Err(e) => eprintln!("Error writing to file '{}': {}", output_filename, e),
+        Ok(_) => info!("Successfully wrote list of nodes to '{}'.", output_filename),
+        Err(e) => error!("Error writing to file '{}': {}", output_filename, e),
     }
 
     // if there are origins that failed to be found
     if !unknown_origins.is_empty() {
         let errors_filename = "errors.txt";
 
-        println!(
-            "Some of the requested origins could not be found in the graph. \nAttempting to write failed origins to '{}'...",
+        warn!(
+            "Some of the requested origins could not be found in the graph.\nWriting failed origins to '{}'...",
             errors_filename
         );
 
