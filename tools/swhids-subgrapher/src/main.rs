@@ -31,6 +31,8 @@ struct Args {
     #[arg(short, long)]
     #[clap(default_value_t = false)]
     try_protocol_variations: bool,
+    #[arg(long)]
+    output: PathBuf,
 }
 
 pub fn main() -> Result<()> {
@@ -130,23 +132,32 @@ pub fn main() -> Result<()> {
         info!("visit completed after visiting {visited_nodes} nodes.");
     }
 
-    let output_filename = "output.txt";
-
-    debug!("Writing list of nodes to '{}'...", output_filename);
+    debug!(
+        "Writing list of nodes to '{}'...",
+        args.output.as_path().display()
+    );
 
     // Call the function and handle the result
-    match write_items_to_file(&subgraph_nodes, output_filename) {
-        Ok(_) => info!("Successfully wrote list of nodes to '{}'.", output_filename),
-        Err(e) => error!("Error writing to file '{}': {}", output_filename, e),
+    match write_items_to_file(&subgraph_nodes, args.output.clone()) {
+        Ok(_) => info!(
+            "Successfully wrote list of nodes to '{}'.",
+            args.output.as_path().display()
+        ),
+        Err(e) => error!(
+            "Error writing to file '{}': {}",
+            args.output.as_path().display(),
+            e
+        ),
     }
 
     // if there are origins that failed to be found
     if !unknown_origins.is_empty() {
-        let errors_filename = "errors.txt";
+        let mut errors_filename = args.output;
+        errors_filename.push("_errors");
 
         warn!(
             "Some of the requested origins could not be found in the graph.\nWriting failed origins to '{}'...",
-            errors_filename
+            errors_filename.as_path().display()
         );
 
         // Call the function and handle the result
