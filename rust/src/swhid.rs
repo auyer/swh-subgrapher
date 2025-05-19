@@ -38,7 +38,6 @@ impl SWHID {
     /// The size of the binary representation of a SWHID
     pub const BYTES_SIZE: usize = 22;
 
-    #[cfg(feature = "compression")]
     /// Loads the SWHID representation for a origin uri
     /// akin to "swh:1:ori:{}"
     pub fn from_origin_url(origin: String) -> SWHID {
