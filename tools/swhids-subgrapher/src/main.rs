@@ -41,7 +41,7 @@ pub fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     info!("Loading origins...");
-    let origins = lines_from_file(args.origins);
+    let origins = lines_from_file(args.origins).expect("Unable to read origins file");
 
     info!("Loading graph...");
     let graph = graph::SwhUnidirectionalGraph::new(args.graph)
@@ -188,10 +188,11 @@ where
     Ok(())
 }
 
-fn lines_from_file(filename: impl AsRef<Path>) -> Vec<String> {
-    let file = File::open(filename).expect("no such file");
+fn lines_from_file(filename: impl AsRef<Path>) -> Result<Vec<String>> {
+    let file = File::open(filename)?;
     let buf = BufReader::new(file);
-    buf.lines()
+    Ok(buf
+        .lines()
         .map(|l| l.expect("Could not parse line"))
-        .collect()
+        .collect())
 }
