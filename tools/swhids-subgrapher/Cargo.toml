@@ -10,7 +10,6 @@ categories = ["compression", "science"]
 
 [dependencies]
 anyhow = { workspace = true }
-bitvec = "1.0.1"
 clap = "4.1.6"
 dsi-progress-logger = { workspace = true }
 env_logger = "0.11.5"

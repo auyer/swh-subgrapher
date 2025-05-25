@@ -12,11 +12,11 @@ use std::io::{self, BufReader, BufWriter, prelude::*};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use bitvec::prelude::*;
 use clap::Parser;
 use dsi_progress_logger::{ProgressLog, progress_logger};
 use log::{debug, error, info, warn};
 
+use swh_graph::collections::{AdaptiveNodeSet, NodeSet};
 use swh_graph::graph::SwhGraphWithProperties;
 use swh_graph::graph::{self, SwhForwardGraph, SwhGraph};
 use swh_graph::mph::DynMphf;
@@ -51,6 +51,7 @@ pub fn main() -> Result<()> {
         .context("Could not load graph properties")?;
 
     let graph_props = graph.properties();
+    let num_nodes = graph.num_nodes();
 
     let mut subgraph_nodes = HashSet::new();
 
@@ -92,9 +93,8 @@ pub fn main() -> Result<()> {
         };
         info!("obtained node ID {node_id} ...");
 
-        // Setup a queue and a visited bitmap for the visit
-        let num_nodes = graph.num_nodes();
-        let mut visited = bitvec![u64, Lsb0; 0; num_nodes];
+        // Setup a queue and a visited AdaptiveNodeSet for the visits
+        let mut visited = AdaptiveNodeSet::new(num_nodes);
         let mut queue: VecDeque<usize> = VecDeque::new();
         assert!(node_id < num_nodes);
         queue.push_back(node_id);
@@ -119,9 +119,9 @@ pub fn main() -> Result<()> {
             if new {
                 visited_nodes += 1;
                 for succ in graph.successors(current_node) {
-                    if !visited[succ] {
+                    if !visited.contains(succ) {
                         queue.push_back(succ);
-                        visited.set(succ as _, true);
+                        visited.insert(succ);
                         pl.light_update();
                     }
                 }
