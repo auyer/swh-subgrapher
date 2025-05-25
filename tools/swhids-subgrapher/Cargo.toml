@@ -9,10 +9,10 @@ keywords = ["software-heritage", "graph", "webgraph"]
 categories = ["compression", "science"]
 
 [dependencies]
-anyhow = "1.0.79"
+anyhow = { workspace = true }
 bitvec = "1.0.1"
 clap = "4.1.6"
-dsi-progress-logger = "0.2.4"
+dsi-progress-logger = { workspace = true }
 env_logger = "0.11.5"
 log = "0.4.17"
 swh-graph = { workspace = true }
