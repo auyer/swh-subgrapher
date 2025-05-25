@@ -8,7 +8,7 @@ use swh_graph::SWHID;
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter, prelude::*};
+use std::io::{self, BufReader, BufWriter, Lines, prelude::*};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -65,7 +65,13 @@ pub fn main() -> Result<()> {
     );
     pl.start("visiting graph ...");
 
-    for origin in origins.iter() {
+    for origin in origins {
+        if origin.is_err() {
+            let err = origin.err().unwrap();
+            error!("failed reading line from origins file: {err}");
+            continue;
+        }
+        let mut origin = origin.unwrap();
         let origin_swhid = SWHID::from_origin_url(origin.to_owned());
 
         // Lookup SWHID
@@ -76,7 +82,7 @@ pub fn main() -> Result<()> {
             error!("origin {origin} not in graph. Will look for other protocols");
             // try with other protocols
             if origin.contains("git://") || origin.contains("https://") {
-                let new_origin = if origin.contains("git://") {
+                origin = if origin.contains("git://") {
                     origin.replace("git://", "https://")
                 } else if origin.contains("https://") {
                     origin.replace("https://", "git://")
@@ -84,11 +90,11 @@ pub fn main() -> Result<()> {
                     origin.to_owned()
                 };
 
-                let origin_swhid = SWHID::from_origin_url(new_origin.to_owned());
+                let origin_swhid = SWHID::from_origin_url(origin.to_owned());
 
                 node_id = graph_props.node_id(origin_swhid);
                 if node_id.is_ok() {
-                    debug!("origin found with different protocol {origin} -> {new_origin}");
+                    debug!("origin found with different protocol: {origin}");
                 }
             }
         }
@@ -198,11 +204,9 @@ where
     Ok(())
 }
 
-fn lines_from_file(filename: impl AsRef<Path>) -> Result<Vec<String>> {
+fn lines_from_file(filename: impl AsRef<Path>) -> io::Result<Lines<BufReader<File>>> {
     let file = File::open(filename)?;
-    let buf = BufReader::new(file);
-    Ok(buf
-        .lines()
-        .map(|l| l.expect("Could not parse line"))
-        .collect())
+    let reader = BufReader::new(file);
+    // returns the iterator from BufReader::lines()
+    Ok(reader.lines())
 }
