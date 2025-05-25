@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::Parser;
 use dsi_progress_logger::{ProgressLog, progress_logger};
-use log::{debug, error, info, warn};
+use log::{Level, debug, error, info, warn};
 
 use swh_graph::collections::{AdaptiveNodeSet, NodeSet};
 use swh_graph::graph::SwhGraphWithProperties;
@@ -39,6 +39,7 @@ pub fn main() -> Result<()> {
     let args = Args::parse();
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    debug!("Debug logging ON...");
 
     info!("Loading origins...");
     let origins = lines_from_file(args.origins).expect("Unable to read origins file");
@@ -56,6 +57,13 @@ pub fn main() -> Result<()> {
     let mut subgraph_nodes = HashSet::new();
 
     let mut unknown_origins = vec![];
+    let mut pl = progress_logger!(
+        display_memory = true,
+        item_name = "node",
+        local_speed = true,
+        expected_updates = Some(num_nodes),
+    );
+    pl.start("visiting graph ...");
 
     for origin in origins.iter() {
         let origin_swhid = SWHID::from_origin_url(origin.to_owned());
@@ -91,29 +99,25 @@ pub fn main() -> Result<()> {
             unknown_origins.push(origin);
             continue;
         };
-        info!("obtained node ID {node_id} ...");
+        debug!("obtained node ID {node_id} ...");
+        assert!(node_id < num_nodes);
 
         // Setup a queue and a visited AdaptiveNodeSet for the visits
         let mut visited = AdaptiveNodeSet::new(num_nodes);
         let mut queue: VecDeque<usize> = VecDeque::new();
-        assert!(node_id < num_nodes);
+
         queue.push_back(node_id);
 
         // Setup the progress logger for
         let mut visited_nodes = 0;
-        let mut pl = progress_logger!(
-            display_memory = true,
-            item_name = "node",
-            local_speed = true,
-            expected_updates = Some(num_nodes),
-        );
-        pl.start("visiting graph ...");
 
-        // Standard BFS
+        debug!("starting bfs for the origin: {origin}");
+
+        // iterative BFS
         while let Some(current_node) = queue.pop_front() {
             let visited_swhid = graph.properties().swhid(current_node);
             debug!("visited: {visited_swhid}");
-            // add current_node to the external results hashmap
+            // add current_node to the external results hashset
             let new = subgraph_nodes.insert(visited_swhid);
             //  only visit children if this node is new
             if new {
@@ -125,12 +129,19 @@ pub fn main() -> Result<()> {
                         pl.light_update();
                     }
                 }
+            } else if log::log_enabled!(Level::Debug) {
+                debug!(
+                    "stopping bfs because this node was foud in a previous bfs run (from another origin) {visited_swhid}"
+                );
             }
         }
 
-        pl.done();
-        info!("visit completed after visiting {visited_nodes} nodes.");
+        if log::log_enabled!(Level::Debug) {
+            pl.update_and_display();
+        }
+        info!("visit from {origin} completed after visiting {visited_nodes} nodes.");
     }
+    pl.done();
 
     debug!(
         "Writing list of nodes to '{}'...",
@@ -152,11 +163,10 @@ pub fn main() -> Result<()> {
 
     // if there are origins that failed to be found
     if !unknown_origins.is_empty() {
-        let mut errors_filename = args.output;
-        errors_filename.push("_errors");
+        let errors_filename = args.output.with_file_name("origin_errors.txt");
 
         warn!(
-            "Some of the requested origins could not be found in the graph.\nWriting failed origins to '{}'...",
+            "Some of the requested origins could not be found in the graph. Writing failed origins to '{}'...",
             errors_filename.as_path().display()
         );
 
