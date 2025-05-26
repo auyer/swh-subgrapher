@@ -1,7 +1,7 @@
 [package]
 name = "swhids-subgrapher"
 version.workspace = true
-edition = "2024"
+edition = "2021"
 readme = "README.md"
 description = "script to help with Software Heritage Sub-graph generation. It retrieves a list of SWHIDs from input Origins"
 license = "GPL-3.0-or-later"

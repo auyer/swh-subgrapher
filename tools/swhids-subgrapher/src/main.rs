@@ -8,13 +8,13 @@ use swh_graph::SWHID;
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Display;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter, Lines, prelude::*};
+use std::io::{self, prelude::*, BufReader, BufWriter, Lines};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use dsi_progress_logger::{ProgressLog, progress_logger};
-use log::{Level, debug, error, info, warn};
+use dsi_progress_logger::{progress_logger, ProgressLog};
+use log::{debug, error, info, warn, Level};
 
 use swh_graph::collections::{AdaptiveNodeSet, NodeSet};
 use swh_graph::graph::SwhGraphWithProperties;
