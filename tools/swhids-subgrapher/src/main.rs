@@ -71,8 +71,8 @@ pub fn main() -> Result<()> {
             error!("failed reading line from origins file: {err}");
             continue;
         }
-        let mut origin = origin.unwrap();
-        let origin_swhid = SWHID::from_origin_url(origin.to_owned());
+        let origin = origin.unwrap();
+        let mut origin_swhid = SWHID::from_origin_url(origin.to_owned());
 
         // Lookup SWHID
         info!("looking up SWHID {} ...", origin);
@@ -82,7 +82,8 @@ pub fn main() -> Result<()> {
             error!("origin {origin} not in graph. Will look for other protocols");
             // try with other protocols
             if origin.contains("git://") || origin.contains("https://") {
-                origin = if origin.contains("git://") {
+                // try to switch the protocol. Only https and git available
+                let alternative_origin = if origin.contains("git://") {
                     origin.replace("git://", "https://")
                 } else if origin.contains("https://") {
                     origin.replace("https://", "git://")
@@ -90,7 +91,7 @@ pub fn main() -> Result<()> {
                     origin.to_owned()
                 };
 
-                let origin_swhid = SWHID::from_origin_url(origin.to_owned());
+                origin_swhid = SWHID::from_origin_url(alternative_origin.to_owned());
 
                 node_id = graph_props.node_id(origin_swhid);
                 if node_id.is_ok() {
@@ -100,6 +101,7 @@ pub fn main() -> Result<()> {
         }
 
         // if node_id is still err, attempts to switch protocols failed
+        // the original url from the origins file should be logged
         let Ok(node_id) = node_id else {
             error!("origin {origin} not in graph");
             unknown_origins.push(origin);
