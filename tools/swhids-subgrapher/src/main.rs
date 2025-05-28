@@ -123,10 +123,11 @@ pub fn main() -> Result<()> {
 
         // iterative BFS
         while let Some(current_node) = queue.pop_front() {
-            let visited_swhid = graph.properties().swhid(current_node);
-            debug!("visited: {visited_swhid}");
-            // add current_node to the external results hashset
-            let new = subgraph_nodes.insert(visited_swhid);
+            if log::log_enabled!(Level::Debug) {
+                let id = graph.properties().swhid(current_node);
+                debug!("visited: {id}");
+            } // add current_node to the external results hashset
+            let new = subgraph_nodes.insert(current_node);
             //  only visit children if this node is new
             if new {
                 visited_nodes += 1;
@@ -139,12 +140,12 @@ pub fn main() -> Result<()> {
                 }
             } else if log::log_enabled!(Level::Debug) {
                 debug!(
-                    "stopping bfs because this node was foud in a previous bfs run (from another origin) {visited_swhid}"
+                    "stopping bfs because this node was foud in a previous bfs run (from another origin) {current_node}"
                 );
             }
         }
 
-        if log::log_enabled!(Level::Debug) {
+        if log::log_enabled!(Level::Info) {
             pl.update_and_display();
         }
         info!("visit from {origin} completed after visiting {visited_nodes} nodes.");
@@ -157,7 +158,13 @@ pub fn main() -> Result<()> {
     );
 
     // Call the function and handle the result
-    match write_items_to_file(&subgraph_nodes, args.output.clone()) {
+    match write_items_to_file(
+        subgraph_nodes
+            .iter()
+            // convert NodeID into SWHID
+            .map(|node| graph.properties().swhid(*node)),
+        args.output.clone(),
+    ) {
         Ok(_) => info!(
             "Successfully wrote list of nodes to '{}'.",
             args.output.as_path().display()
