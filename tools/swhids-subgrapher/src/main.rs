@@ -79,7 +79,7 @@ pub fn main() -> Result<()> {
         let mut node_id = graph_props.node_id(origin_swhid);
 
         if node_id.is_err() && args.try_protocol_variations {
-            error!("origin {origin} not in graph. Will look for other protocols");
+            warn!("origin {origin} not in graph. Will look for other protocols");
             // try with other protocols
             if origin.contains("git://") || origin.contains("https://") {
                 // try to switch the protocol. Only https and git available
