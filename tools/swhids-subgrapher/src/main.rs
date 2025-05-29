@@ -20,6 +20,7 @@ use swh_graph::collections::{AdaptiveNodeSet, NodeSet};
 use swh_graph::graph::SwhGraphWithProperties;
 use swh_graph::graph::{self, SwhForwardGraph, SwhGraph};
 use swh_graph::mph::DynMphf;
+use swh_graph::properties;
 
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
@@ -42,7 +43,7 @@ pub fn main() -> Result<()> {
     debug!("Debug logging ON...");
 
     info!("Loading origins...");
-    let origins = lines_from_file(args.origins).expect("Unable to read origins file");
+    let origins_lines = lines_from_file(args.origins).expect("Unable to read origins file");
 
     info!("Loading graph...");
     let graph = graph::SwhUnidirectionalGraph::new(args.graph)
@@ -51,12 +52,65 @@ pub fn main() -> Result<()> {
         .load_properties(|properties| properties.load_maps::<DynMphf>())
         .context("Could not load graph properties")?;
 
+    let (subgraph_nodes, unknown_origins) =
+        process_origins_and_build_subgraph(&graph, origins_lines, args.try_protocol_variations);
+
+    debug!(
+        "Writing list of nodes to '{}'...",
+        args.output.as_path().display()
+    );
+
+    // Call the function and handle the result
+    match write_items_to_file(
+        subgraph_nodes
+            .iter()
+            // convert NodeID into SWHID
+            .map(|node| graph.properties().swhid(*node)),
+        args.output.clone(),
+    ) {
+        Ok(_) => info!(
+            "Successfully wrote list of nodes to '{}'.",
+            args.output.as_path().display()
+        ),
+        Err(e) => error!(
+            "Error writing to file '{}': {}",
+            args.output.as_path().display(),
+            e
+        ),
+    }
+
+    // if there are origins that failed to be found
+    if !unknown_origins.is_empty() {
+        let errors_filename = args.output.with_file_name("origin_errors.txt");
+
+        warn!(
+            "Some of the requested origins could not be found in the graph. Writing failed origins to '{}'...",
+            errors_filename.as_path().display()
+        );
+
+        // Call the function and handle the result
+        write_items_to_file(&unknown_origins, errors_filename)?;
+    }
+
+    Ok(())
+}
+
+fn process_origins_and_build_subgraph<G, I>(
+    graph: &G,
+    origins: I,
+    try_protocol_variations: bool,
+) -> (HashSet<usize>, Vec<String>)
+where
+    G: SwhGraph + SwhGraphWithProperties + SwhForwardGraph,
+    G::Maps: properties::Maps,
+    I: Iterator<Item = Result<String, std::io::Error>>,
+{
     let graph_props = graph.properties();
     let num_nodes = graph.num_nodes();
 
     let mut subgraph_nodes = HashSet::new();
-
     let mut unknown_origins = vec![];
+
     let mut pl = progress_logger!(
         display_memory = true,
         item_name = "node",
@@ -65,20 +119,20 @@ pub fn main() -> Result<()> {
     );
     pl.start("visiting graph ...");
 
-    for origin in origins {
-        if origin.is_err() {
-            let err = origin.err().unwrap();
+    for origin_result in origins {
+        if origin_result.is_err() {
+            let err = origin_result.err().unwrap();
             error!("failed reading line from origins file: {err}");
             continue;
         }
-        let origin = origin.unwrap();
+        let origin = origin_result.unwrap();
         let mut origin_swhid = SWHID::from_origin_url(origin.to_owned());
 
         // Lookup SWHID
         info!("looking up SWHID {} ...", origin);
-        let mut node_id = graph_props.node_id(origin_swhid);
+        let mut node_id_lookup = graph_props.node_id(origin_swhid);
 
-        if node_id.is_err() && args.try_protocol_variations {
+        if node_id_lookup.is_err() && try_protocol_variations {
             warn!("origin {origin} not in graph. Will look for other protocols");
             // try with other protocols
             if origin.contains("git://") || origin.contains("https://") {
@@ -93,8 +147,8 @@ pub fn main() -> Result<()> {
 
                 origin_swhid = SWHID::from_origin_url(alternative_origin.to_owned());
 
-                node_id = graph_props.node_id(origin_swhid);
-                if node_id.is_ok() {
+                node_id_lookup = graph_props.node_id(origin_swhid);
+                if node_id_lookup.is_ok() {
                     debug!("origin found with different protocol: {origin}");
                 }
             }
@@ -102,7 +156,7 @@ pub fn main() -> Result<()> {
 
         // if node_id is still err, attempts to switch protocols failed
         // the original url from the origins file should be logged
-        let Ok(node_id) = node_id else {
+        let Ok(node_id) = node_id_lookup else {
             error!("origin {origin} not in graph");
             unknown_origins.push(origin);
             continue;
@@ -152,44 +206,7 @@ pub fn main() -> Result<()> {
     }
     pl.done();
 
-    debug!(
-        "Writing list of nodes to '{}'...",
-        args.output.as_path().display()
-    );
-
-    // Call the function and handle the result
-    match write_items_to_file(
-        subgraph_nodes
-            .iter()
-            // convert NodeID into SWHID
-            .map(|node| graph.properties().swhid(*node)),
-        args.output.clone(),
-    ) {
-        Ok(_) => info!(
-            "Successfully wrote list of nodes to '{}'.",
-            args.output.as_path().display()
-        ),
-        Err(e) => error!(
-            "Error writing to file '{}': {}",
-            args.output.as_path().display(),
-            e
-        ),
-    }
-
-    // if there are origins that failed to be found
-    if !unknown_origins.is_empty() {
-        let errors_filename = args.output.with_file_name("origin_errors.txt");
-
-        warn!(
-            "Some of the requested origins could not be found in the graph. Writing failed origins to '{}'...",
-            errors_filename.as_path().display()
-        );
-
-        // Call the function and handle the result
-        write_items_to_file(&unknown_origins, errors_filename)?;
-    }
-
-    Ok(())
+    (subgraph_nodes, unknown_origins)
 }
 
 // write_items_to_file can take hanshmaps and vecs
