@@ -23,16 +23,23 @@ use swh_graph::mph::DynMphf;
 use swh_graph::properties;
 
 #[derive(Parser, Debug)]
-#[command(about, long_about = None)]
+#[command(version, about, long_about = None)]
 struct Args {
+    /// path location to the base graph. It should contain prefixes if they are present in the file
+    /// names. Check the docs for more details
     #[arg(short, long)]
     graph: PathBuf,
+    /// path to a file with a list of origins to be searched.
+    /// Origins should be one by line, without any extra chars
     #[arg(short, long)]
     origins: PathBuf,
-    #[arg(short, long)]
-    #[clap(default_value_t = false)]
-    try_protocol_variations: bool,
-    #[arg(long)]
+    /// in case an origin is not found in the graph, this allows the script to attempt to find it
+    /// with another protocol (https:// <-> git://)
+    #[arg(short = 'p', long, default_value_t = false)]
+    allow_protocol_variations: bool,
+    /// path to folder or file name for the output. If any origin is not found in the graph,
+    /// a file named `origin_errors.txt` will be written in the same path
+    #[arg(short = 'O', long)]
     output: PathBuf,
 }
 
@@ -53,7 +60,7 @@ pub fn main() -> Result<()> {
         .context("Could not load graph properties")?;
 
     let (subgraph_nodes, unknown_origins) =
-        process_origins_and_build_subgraph(&graph, origins_lines, args.try_protocol_variations);
+        process_origins_and_build_subgraph(&graph, origins_lines, args.allow_protocol_variations);
 
     debug!(
         "Writing list of nodes to '{}'...",
@@ -98,7 +105,7 @@ pub fn main() -> Result<()> {
 fn process_origins_and_build_subgraph<G, I>(
     graph: &G,
     origins: I,
-    try_protocol_variations: bool,
+    allow_protocol_variations: bool,
 ) -> (HashSet<usize>, Vec<String>)
 where
     G: SwhGraphWithProperties + SwhForwardGraph,
@@ -132,7 +139,7 @@ where
         info!("looking up SWHID {} ...", origin);
         let mut node_id_lookup = graph_props.node_id(origin_swhid);
 
-        if node_id_lookup.is_err() && try_protocol_variations {
+        if node_id_lookup.is_err() && allow_protocol_variations {
             warn!("origin {origin} not in graph. Will look for other protocols");
             // try with other protocols
             if origin.contains("git://") || origin.contains("https://") {
@@ -331,11 +338,12 @@ mod tests {
 
         let origins = vec![
             Ok("https://example.com/repo1".to_string()),
-            Ok("https://example.com/repo2".to_string()),
+            // this one should be found with allow_protocol_variations
+            Ok("git://example.com/repo2".to_string()),
             Ok("https://unknown.com/repo".to_string()),
         ];
         let (subgraph_nodes, unknown_origins) =
-            process_origins_and_build_subgraph(&graph, origins.into_iter(), false);
+            process_origins_and_build_subgraph(&graph, origins.into_iter(), true);
 
         // Check that we found the expected nodes
         assert_eq!(subgraph_nodes.len(), 7); // should contain both origins and the revision

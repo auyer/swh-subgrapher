@@ -16,7 +16,7 @@ The script performs the following main functions:
 3. **Resolves Origins to SWHIDs**: For each origin URL:
     * Calculates its SHA1 hash to form a potential SWHID.
     * Looks up the SWHID in the loaded graph.
-    * If an origin is not found, and the `--try-protocol-variations / --t` flag is set, it will attempt to find the origin by switching between `git://` and `https://` protocols.
+    * If an origin is not found, and the `--allow-protocol-variations / --p` flag is set, it will attempt to find the origin by switching between `git://` and `https://` protocols.
 4. **Graph Traversal**: For each successfully found origin node, it performs a Breadth-First Search (BFS) starting from that node to discover all reachable nodes in the graph.
 5. **Collects SWHIDs**: All unique SWHIDs encountered during the traversal are collected.
 6. **Outputs Results**:
