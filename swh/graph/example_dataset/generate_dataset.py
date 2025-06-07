@@ -29,7 +29,7 @@ def main():
         help="Also compress the dataset",
     )
     parser.add_argument(
-        "--target", default="release", help="rust target to use for compression"
+        "--profile", default="release", help="rust profile to use for compression"
     )
     parser.add_argument("output", help="output directory", nargs="?", default=".")
     args = parser.parse_args()
@@ -40,7 +40,7 @@ def main():
     for name, exporter in exporters.items():
         if (output_path / name).exists():
             shutil.rmtree(output_path / name)
-        with exporter(config, output_path / name, sensitive_export_path=None) as e:
+        with exporter(config, output_path / name) as e:
             for obj in DATASET:
                 e.process_object(obj.object_type, obj)
 
@@ -52,7 +52,7 @@ def main():
             output_path / "orc",
             output_path / "compressed",
             "example",
-            conf={"target": args.target},
+            conf={"profile": args.profile},
         )
 
 
