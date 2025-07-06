@@ -37,7 +37,7 @@ The script performs the following main functions:
 3. Build the project using Cargo:
 
     ```bash
-    cargo build --release
+    cargo build --release -p swhids-subgrapher
     ```
 
     The executable will be located in `target/release/swhids-subgrapher`.
