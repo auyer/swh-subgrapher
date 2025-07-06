@@ -61,7 +61,7 @@ impl core::fmt::Display for SWHID {
             self.node_type.to_str(),
         )?;
         for byte in self.hash.iter() {
-            write!(f, "{:02x}", byte)?;
+            write!(f, "{byte:02x}")?;
         }
         Ok(())
     }

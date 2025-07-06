@@ -83,6 +83,19 @@ enum Commands {
         buffer_size: usize,
         dataset_dir: PathBuf,
     },
+    /// Extracts the full names of authors and committers from the ORC tables containing them.
+    ///
+    /// All the full names are concatenated into a single byte string that is written to disk.
+    /// Another file, that contains the length of each full name, is generated.
+    ExtractFullnames {
+        #[arg(value_enum, long, default_value_t = DatasetFormat::Orc)]
+        format: DatasetFormat,
+        #[arg(long)]
+        person_function: PathBuf,
+        dataset_dir: PathBuf,
+        fullnames_path: PathBuf,
+        lengths_path: PathBuf,
+    },
 
     /// Reads the list of nodes from the generated unique SWHIDS and counts the number
     /// of nodes of each type
@@ -239,7 +252,7 @@ pub fn main() -> Result<()> {
             // by consumers
             let mut shard_id = 0;
             let mut next_shard = || -> Result<_> {
-                let path = target_dir.join(format!("nodes.txt.{:0>8}.zst", shard_id));
+                let path = target_dir.join(format!("nodes.txt.{shard_id:0>8}.zst"));
                 shard_id += 1;
                 let file = std::fs::File::create_new(&path)
                     .with_context(|| format!("Could not create {}", path.display()))?;
@@ -272,7 +285,7 @@ pub fn main() -> Result<()> {
                     writer = next_shard()?;
                 }
                 writer
-                    .write_all(format!("{}\n", swhid).as_bytes())
+                    .write_all(format!("{swhid}\n").as_bytes())
                     .context("Could not write SWHID")?;
             }
         }
@@ -366,6 +379,83 @@ pub fn main() -> Result<()> {
                 );
             }
         }
+        Commands::ExtractFullnames {
+            format: DatasetFormat::Orc,
+            person_function,
+            dataset_dir,
+            fullnames_path,
+            lengths_path,
+        } => {
+            use dsi_bitstream::prelude::*;
+            use pthash::Phf;
+            use std::sync::OnceLock;
+
+            let person_mph = swh_graph::compress::persons::PersonMphf::load(&person_function)
+                .with_context(|| format!("Could not load {}", person_function.display()))?;
+            let num_persons = usize::try_from(person_mph.num_keys())?;
+            let person_mph = swh_graph::compress::persons::PersonHasher::new(&person_mph);
+
+            let mut pl = concurrent_progress_logger!(display_memory = true, local_speed = true);
+            pl.start("Extracting and sorting full names");
+
+            let fullnames: Vec<OnceLock<Box<[u8]>>> = vec![OnceLock::new(); num_persons];
+
+            log::info!("Building full names...");
+            swh_graph::compress::iter_fullnames(&dataset_dir, "person")
+                .context("Could not read full names from input dataset")?
+                .try_for_each_with(pl.clone(), |pl, (fullname, sha256)| -> Result<()> {
+                    let base64 = base64_simd::STANDARD;
+                    let person_hash = usize::try_from(
+                        person_mph.hash(
+                            base64
+                                .encode_to_string(sha256)
+                                .into_bytes()
+                                .into_boxed_slice(),
+                        )?,
+                    )
+                    .context("Person hash overflowed usize")?;
+                    fullnames
+                        .get(person_hash)
+                        .context("Person hash is greater than the number of persons")?
+                        .set(fullname.clone())
+                        .map_err(|other_fullname| {
+                            anyhow!("Hash collision between {fullname:?} and {other_fullname:?}")
+                        })?;
+                    pl.update();
+                    Ok(())
+                })?;
+            pl.done();
+            let fullnames: Vec<_> = fullnames
+                .into_par_iter()
+                .flat_map(|fullname| fullname.into_inner())
+                .collect();
+            if fullnames.len() != num_persons {
+                bail!(
+                    "Wrong number of full names, expected {}, got {}",
+                    num_persons,
+                    fullnames.len()
+                );
+            }
+
+            log::info!("Writing full names and lengths...");
+            let mut fullnames_file = File::create(&fullnames_path)
+                .with_context(|| format!("Could not create {}", fullnames_path.display()))?;
+            let lengths_file = File::create(&lengths_path)
+                .with_context(|| format!("Could not create {}", lengths_path.display()))?;
+
+            let mut lengths_writer = <BufBitWriter<BE, _>>::new(<WordAdapter<u64, _>>::new(
+                BufWriter::with_capacity(1 << 20, lengths_file),
+            ));
+
+            for fullname in &fullnames {
+                fullnames_file.write_all(fullname)?;
+                lengths_writer
+                    .write_gamma(
+                        u64::try_from(fullname.len()).context("Name length overflowed u64")?,
+                    )
+                    .context("Could not write gamma")?;
+            }
+        }
         Commands::NodeStats {
             format: DatasetFormat::Orc,
             swhids_dir,
@@ -416,7 +506,7 @@ pub fn main() -> Result<()> {
                 .write_all(stats_lines.join("").as_bytes())
                 .context("Could not write node stats")?;
             count_file
-                .write_all(format!("{}\n", total).as_bytes())
+                .write_all(format!("{total}\n").as_bytes())
                 .context("Could not write node count")?;
         }
         Commands::EdgeStats {
@@ -473,7 +563,7 @@ pub fn main() -> Result<()> {
                 for dst_type in NodeType::all() {
                     let count = stats[src_type as usize][dst_type as usize];
                     if count != 0 {
-                        stats_lines.push(format!("{}:{} {}\n", src_type, dst_type, count));
+                        stats_lines.push(format!("{src_type}:{dst_type} {count}\n"));
                         total += count;
                     }
                 }
@@ -484,7 +574,7 @@ pub fn main() -> Result<()> {
                 .write_all(stats_lines.join("").as_bytes())
                 .context("Could not write edge stats")?;
             count_file
-                .write_all(format!("{}\n", total).as_bytes())
+                .write_all(format!("{total}\n").as_bytes())
                 .context("Could not write edge count")?;
         }
 
@@ -524,7 +614,7 @@ pub fn main() -> Result<()> {
                 log::info!("Writing origins...");
                 for (_url, id) in origins {
                     target_file
-                        .write_all(format!("{}\n", id).as_bytes())
+                        .write_all(format!("{id}\n").as_bytes())
                         .context("Could not write origin")?;
                 }
             }
@@ -641,8 +731,7 @@ pub fn main() -> Result<()> {
                     (
                         "labelspec".to_string(),
                         format!(
-                            "org.softwareheritage.graph.labels.SwhLabel(DirEntry,{})",
-                            label_width
+                            "org.softwareheritage.graph.labels.SwhLabel(DirEntry,{label_width})"
                         ),
                     ),
                     (

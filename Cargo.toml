@@ -6,7 +6,9 @@ members = [
     "grpc-server",
     "pyo3",
     "rust",
+    "stdlib-rs",
     "tools/counters",
+    "tools/id2fullname",
     "tools/topology",
     "tools/swhids-subgrapher",
 ]

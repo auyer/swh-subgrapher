@@ -120,7 +120,7 @@ from typing import Any, Dict, List, MutableSequence, Optional, Sequence, Set
 # control
 import luigi
 
-from swh.export.luigi import Format, LocalExport
+from swh.export.luigi import ExportGraph, Format, LocalExport
 from swh.export.luigi import ObjectType as Table
 from swh.export.luigi import S3PathParameter
 from swh.graph.webgraph import CompressionStep, do_step
@@ -385,7 +385,10 @@ class _CompressionStepTask(luigi.Task):
             if path.is_file():
                 if path.stat().st_size == 0:
                     if path.name.endswith(
-                        (".labels.fcl.bytearray", ".labels.fcl.pointers")
+                        (
+                            ".labels.fcl.bytearray",
+                            ".labels.fcl.pointers",
+                        )
                     ) and {"dir", "snp", "ori"}.isdisjoint(set(self.object_types)):
                         # It's expected that .labels.fcl.bytearray is empty when both dir
                         # and snp are excluded, because these are the only objects
@@ -404,10 +407,25 @@ class _CompressionStepTask(luigi.Task):
 
         return True
 
+    def _is_expected_output_file(self, filename: str) -> bool:
+        if filename.endswith(
+            (
+                "-labelled.labels",
+                "-labelled.ef",
+                "-labelled.properties",
+            )
+        ):
+            return not {"dir", "snp", "ori"}.isdisjoint(set(self.object_types))
+        else:
+            return True
+
     def requires(self) -> Sequence[luigi.Task]:
         """Returns a list of luigi tasks matching :attr:`PREVIOUS_STEPS`."""
         requirements_d = {}
         for input_file in self.INPUT_FILES:
+            if not self._is_expected_output_file(input_file):
+                # These files are only generated for graphs that have labels
+                continue
             for cls in _CompressionStepTask.__subclasses__():
                 if input_file in cls.OUTPUT_FILES:
                     kwargs = dict(
@@ -417,6 +435,7 @@ class _CompressionStepTask(luigi.Task):
                         local_graph_path=self.local_graph_path,
                         object_types=self.object_types,
                         rust_executable_dir=self.rust_executable_dir,
+                        test_flavor=self.test_flavor,
                     )
                     if self.batch_size:
                         kwargs["batch_size"] = self.batch_size
@@ -457,6 +476,8 @@ class _CompressionStepTask(luigi.Task):
         from swh.graph.config import check_config_compress
 
         for input_file in self.INPUT_FILES:
+            if not self._is_expected_output_file(input_file):
+                continue
             path = self.local_graph_path / f"{self.graph_name}{input_file}"
             if not path.exists():
                 raise Exception(f"expected input {path} does not exist")
@@ -865,6 +886,25 @@ class MphPersons(_CompressionStepTask):
         return bitvector_size
 
 
+class ExtractFullnames(_CompressionStepTask):
+    STEP = CompressionStep.EXTRACT_FULLNAMES
+    INPUT_FILES = {".persons.pthash"}
+    EXPORT_AS_INPUT = True
+    OUTPUT_FILES = {".persons", ".persons.lengths"}
+
+    def _large_allocations(self) -> int:
+        return 0
+
+
+class FullnamesEf(_CompressionStepTask):
+    STEP = CompressionStep.FULLNAMES_EF
+    INPUT_FILES = {".persons", ".persons.lengths"}
+    OUTPUT_FILES = {".persons.ef"}
+
+    def _large_allocations(self) -> int:
+        return 0
+
+
 class NodeProperties(_CompressionStepTask):
     STEP = CompressionStep.NODE_PROPERTIES
     INPUT_FILES = {".pthash.order", ".pthash", ".persons.pthash"}
@@ -1058,6 +1098,30 @@ class Stats(_CompressionStepTask):
     STEP = CompressionStep.STATS
     INPUT_FILES = {".graph", ".ef", "-transposed.graph", "-transposed.ef"}
     OUTPUT_FILES = {".stats"}
+
+    def _large_allocations(self) -> int:
+        return 0
+
+
+class EndToEndTest(_CompressionStepTask):
+    STEP = CompressionStep.E2E_TEST
+    INPUT_FILES = {
+        ".ef",
+        ".graph",
+        ".node2type.bin",
+        ".node2swhid.bin",
+        ".properties",
+        "-labelled.labels",
+        "-labelled.ef",
+        "-labelled.properties",
+        "-transposed.graph",
+        "-transposed.ef",
+        "-transposed-labelled.labels",
+        "-transposed-labelled.ef",
+        "-transposed-labelled.properties",
+        ".stats",
+    }
+    OUTPUT_FILES = set()
 
     def _large_allocations(self) -> int:
         return 0
@@ -1258,6 +1322,7 @@ class CompressGraph(luigi.Task):
             local_graph_path=self.local_graph_path,
             object_types=self.object_types,
             rust_executable_dir=self.rust_executable_dir,
+            test_flavor=self.test_flavor,
         )
         if set(self.object_types).isdisjoint({"dir", "snp", "ori"}):
             # Only nodes of these three types have outgoing arcs with labels
@@ -1270,18 +1335,27 @@ class CompressGraph(luigi.Task):
                 EdgeLabelsEf(**kwargs),
                 EdgeLabelsTransposeEf(**kwargs),
             ]
+        local_export = LocalExport(
+            local_export_path=self.local_export_path,
+            local_sensitive_export_path=self.local_sensitive_export_path,
+            formats=[Format.orc],  # type: ignore[attr-defined]
+            object_types=_tables_for_object_types(self.object_types),
+        )
+        fullname_tasks = (
+            [ExtractFullnames(**kwargs), FullnamesEf(**kwargs)]
+            if issubclass(local_export.export_task_type, ExportGraph)
+            and not {"rel", "rev"}.isdisjoint(set(self.object_types))
+            else []
+        )
         return [
-            LocalExport(
-                local_export_path=self.local_export_path,
-                local_sensitive_export_path=self.local_sensitive_export_path,
-                formats=[Format.orc],  # type: ignore[attr-defined]
-                object_types=_tables_for_object_types(self.object_types),
-            ),
+            local_export,
             NodeStats(**kwargs),
             TransposeEf(**kwargs),
             Maps(**kwargs),
+            *fullname_tasks,
             NodeProperties(**kwargs),
             Stats(**kwargs),
+            EndToEndTest(**kwargs),
             *label_tasks,
         ]
 
@@ -1333,7 +1407,6 @@ class CompressGraph(luigi.Task):
 
         steps = [json.loads(path.read_text()) for path in step_stamp_paths]
 
-        do_step(CompressionStep.E2E_TEST, conf=conf)
         do_step(CompressionStep.CLEAN_TMP, conf=conf)
 
         # Copy export metadata
