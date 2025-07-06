@@ -231,7 +231,7 @@ where
     let mut writer = BufWriter::new(file);
     // Iterate over the elements (strings) in the HashSet.
     for item in items {
-        writeln!(writer, "{}", item)?;
+        writeln!(writer, "{item}")?;
     }
 
     Ok(())
