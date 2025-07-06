@@ -16,7 +16,6 @@ use clap::Parser;
 use dsi_progress_logger::{progress_logger, ProgressLog};
 use log::{debug, error, info, warn, Level};
 
-use swh_graph::collections::{AdaptiveNodeSet, NodeSet};
 use swh_graph::graph::SwhGraphWithProperties;
 use swh_graph::graph::{self, SwhForwardGraph};
 use swh_graph::mph::DynMphf;
@@ -59,7 +58,7 @@ pub fn main() -> Result<()> {
         .load_properties(|properties| properties.load_maps::<DynMphf>())
         .context("Could not load graph properties")?;
 
-    let (subgraph_nodes, unknown_origins) =
+    let (visited, unknown_origins) =
         process_origins_and_build_subgraph(&graph, origins_lines, args.allow_protocol_variations);
 
     debug!(
@@ -69,7 +68,7 @@ pub fn main() -> Result<()> {
 
     // Call the function and handle the result
     match write_items_to_file(
-        subgraph_nodes
+        visited
             .iter()
             // convert NodeID into SWHID
             .map(|node| graph.properties().swhid(*node)),
@@ -115,7 +114,7 @@ where
     let graph_props = graph.properties();
     let num_nodes = graph.num_nodes();
 
-    let mut subgraph_nodes = HashSet::new();
+    let mut visited = HashSet::new();
     let mut unknown_origins = vec![];
 
     let mut pl = progress_logger!(
@@ -171,8 +170,7 @@ where
         debug!("obtained node ID {node_id} ...");
         assert!(node_id < num_nodes);
 
-        // Setup a queue and a visited AdaptiveNodeSet for the visits
-        let mut visited = AdaptiveNodeSet::new(num_nodes);
+        // Setup a queue
         let mut queue: VecDeque<usize> = VecDeque::new();
 
         queue.push_back(node_id);
@@ -188,16 +186,13 @@ where
                 let id = graph.properties().swhid(current_node);
                 debug!("visited: {id}");
             } // add current_node to the external results hashset
-            let new = subgraph_nodes.insert(current_node);
+            let new = visited.insert(current_node);
             //  only visit children if this node is new
             if new {
                 visited_nodes += 1;
                 for succ in graph.successors(current_node) {
-                    if !visited.contains(succ) {
-                        queue.push_back(succ);
-                        visited.insert(succ);
-                        pl.light_update();
-                    }
+                    queue.push_back(succ);
+                    pl.light_update();
                 }
             } else if log::log_enabled!(Level::Debug) {
                 debug!(
@@ -213,7 +208,7 @@ where
     }
     pl.done();
 
-    (subgraph_nodes, unknown_origins)
+    (visited, unknown_origins)
 }
 
 // write_items_to_file can take hanshmaps and vecs
@@ -342,11 +337,11 @@ mod tests {
             Ok("git://example.com/repo2".to_string()),
             Ok("https://unknown.com/repo".to_string()),
         ];
-        let (subgraph_nodes, unknown_origins) =
+        let (visited, unknown_origins) =
             process_origins_and_build_subgraph(&graph, origins.into_iter(), true);
 
         // Check that we found the expected nodes
-        assert_eq!(subgraph_nodes.len(), 7); // should contain both origins and the revision
+        assert_eq!(visited.len(), 7); // should contain both origins and the revision
         assert_eq!(unknown_origins.len(), 1); // the unknown origin
         assert_eq!(unknown_origins[0], "https://unknown.com/repo");
 
